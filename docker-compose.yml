@@ -1,0 +1,6 @@
+﻿services:
+  frpcontrol:
+    image: frpcontrol
+    build:
+      context: .
+      dockerfile: FRPControl/Dockerfile
