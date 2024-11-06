@@ -1,9 +1,14 @@
-﻿using Microsoft.AspNetCore.Mvc;
-using System.Net.WebSockets;
+﻿using System.Net.WebSockets;
+using System.Text;
+using System.Text.Json;
+using FRPControl.RealtimeControl.Actions;
+using FRPControl.RealtimeControl.Actions.Handlers;
+using FRPControl.RealtimeControl.Actions.Payloads;
+using Microsoft.AspNetCore.Mvc;
 
 namespace FRPControl.RealtimeControl;
 
-public class RealtimeControlController : ControllerBase
+public class RealtimeControlController(ILogger<RealtimeControlController> logger) : ControllerBase
 {
     /// <summary>
     ///     Realtime control endpoint
@@ -14,8 +19,8 @@ public class RealtimeControlController : ControllerBase
     {
         if (HttpContext.WebSockets.IsWebSocketRequest)
         {
-            WebSocket ws = await HttpContext.WebSockets.AcceptWebSocketAsync();
-            await HandleMessage(ws);
+            var ws = await HttpContext.WebSockets.AcceptWebSocketAsync();
+            await HandleConnection(ws);
         }
         else
         {
@@ -23,23 +28,87 @@ public class RealtimeControlController : ControllerBase
         }
     }
 
-    private static async Task HandleMessage(WebSocket ws)
+    private async Task HandleConnection(WebSocket ws)
     {
-        byte[] buffer = new byte[1024 * 4];
-        WebSocketReceiveResult result = await ws.ReceiveAsync(new ArraySegment<byte>(buffer), CancellationToken.None);
+        var buffer = new byte[1024 * 4];
+        var data = new MemoryStream();
+        var cancellationToken = CancellationToken.None;
 
-        while (!result.CloseStatus.HasValue)
+        try
         {
-            await ws.SendAsync(
-                new ArraySegment<byte>(buffer, 0, result.Count),
-                result.MessageType,
-                result.EndOfMessage,
-                CancellationToken.None
-            );
+            while (ws.State == WebSocketState.Open)
+            {
+                var result = await ws.ReceiveAsync(new ArraySegment<byte>(buffer), cancellationToken);
+                data.Write(buffer, 0, result.Count);
 
-            result = await ws.ReceiveAsync(new ArraySegment<byte>(buffer), CancellationToken.None);
+                if (result.EndOfMessage)
+                {
+                    data.Seek(0, SeekOrigin.Begin);
+                    var json = Encoding.UTF8.GetString(data.ToArray());
+                    data.SetLength(0);
+
+                    await HandleMessageAsync(ws, json, CancellationToken.None);
+                }
+            }
         }
+        catch (WebSocketException e)
+        {
+            logger.LogWarning("WebSocket connection closed unexpectedly:" + e.Message);
+        }
+        finally
+        {
+            if (ws.State != WebSocketState.Open)
+                await ws.CloseAsync(
+                    WebSocketCloseStatus.NormalClosure,
+                    "WebSocket connection gracefully closed",
+                    CancellationToken.None
+                );
+        }
+    }
 
-        await ws.CloseAsync(result.CloseStatus.Value, result.CloseStatusDescription, CancellationToken.None);
+    private async Task HandleMessageAsync(WebSocket ws, string messageString, CancellationToken cancellationToken)
+    {
+        try
+        {
+            // Deserialize message
+            var deserializeOptions = new JsonSerializerOptions
+            {
+                Converters = { new RequestConverter() },
+                WriteIndented = true,
+            };
+
+            var message = JsonSerializer.Deserialize<RequestMessage<IActionPayload>>(messageString, deserializeOptions);
+            if (message == null)
+            {
+                logger.LogWarning("Received unexpected message: " + messageString);
+                return;
+            }
+
+            logger.LogDebug("Received message: " + message);
+
+            // Do handling
+            var handler = message.ActionType switch
+            {
+                ActionType.GetServerConfig => new GetServerConfigHandler(),
+                _ => null,
+            };
+            if (handler == null)
+            {
+                logger.LogWarning("No handler found for: " + message.ActionType);
+                return;
+            }
+
+            var response = await handler.HandleMessageAsync((GetServerConfigPayload)message.Payload, cancellationToken);
+            await ws.SendAsync(
+                new ArraySegment<byte>(Encoding.UTF8.GetBytes(JsonSerializer.Serialize(response))),
+                WebSocketMessageType.Text,
+                true,
+                cancellationToken
+            );
+        }
+        catch (JsonException e)
+        {
+            logger.LogWarning($"Cannot deserialize WebSocket message ${e.Message}");
+        }
     }
 }

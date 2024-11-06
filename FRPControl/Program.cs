@@ -1,6 +1,9 @@
+using FRPControl.RealtimeControl.Actions.Handlers;
 using Scalar.AspNetCore;
 
-internal class Program
+namespace FRPControl;
+
+internal static class Program
 {
     private static async Task Main(string[] args)
     {
