@@ -1,4 +1,4 @@
-using FRPControl.RealtimeControl.Actions.Handlers;
+using FRPControl.RealtimeControl;
 using Scalar.AspNetCore;
 
 namespace FRPControl;
@@ -13,6 +13,8 @@ internal static class Program
         builder.Services.AddSwaggerGen();
 
         builder.Services.AddControllers();
+
+        new RealtimeControlModule().ConfigureServices(builder.Services);
 
         var app = builder.Build();
 

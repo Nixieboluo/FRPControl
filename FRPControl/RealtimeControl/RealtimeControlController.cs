@@ -2,13 +2,14 @@
 using System.Text;
 using System.Text.Json;
 using FRPControl.RealtimeControl.Actions;
-using FRPControl.RealtimeControl.Actions.Handlers;
-using FRPControl.RealtimeControl.Actions.Payloads;
 using Microsoft.AspNetCore.Mvc;
 
 namespace FRPControl.RealtimeControl;
 
-public class RealtimeControlController(ILogger<RealtimeControlController> logger) : ControllerBase
+public class RealtimeControlController(
+    ILogger<RealtimeControlController> logger,
+    ActionHandlerResolver actionHandlerResolver
+) : ControllerBase
 {
     /// <summary>
     ///     Realtime control endpoint
@@ -20,7 +21,7 @@ public class RealtimeControlController(ILogger<RealtimeControlController> logger
         if (HttpContext.WebSockets.IsWebSocketRequest)
         {
             var ws = await HttpContext.WebSockets.AcceptWebSocketAsync();
-            await HandleConnection(ws);
+            await HandleConnectionAsync(ws);
         }
         else
         {
@@ -28,7 +29,7 @@ public class RealtimeControlController(ILogger<RealtimeControlController> logger
         }
     }
 
-    private async Task HandleConnection(WebSocket ws)
+    private async Task HandleConnectionAsync(WebSocket ws)
     {
         var buffer = new byte[1024 * 4];
         var data = new MemoryStream();
@@ -71,34 +72,10 @@ public class RealtimeControlController(ILogger<RealtimeControlController> logger
         try
         {
             // Deserialize message
-            var deserializeOptions = new JsonSerializerOptions
-            {
-                Converters = { new RequestConverter() },
-                WriteIndented = true,
-            };
+            var payload = ActionMessageDecoder.Decode(messageString);
+            logger.LogDebug("Received message: " + payload);
 
-            var message = JsonSerializer.Deserialize<RequestMessage<IActionPayload>>(messageString, deserializeOptions);
-            if (message == null)
-            {
-                logger.LogWarning("Received unexpected message: " + messageString);
-                return;
-            }
-
-            logger.LogDebug("Received message: " + message);
-
-            // Do handling
-            var handler = message.ActionType switch
-            {
-                ActionType.GetServerConfig => new GetServerConfigHandler(),
-                _ => null,
-            };
-            if (handler == null)
-            {
-                logger.LogWarning("No handler found for: " + message.ActionType);
-                return;
-            }
-
-            var response = await handler.HandleMessageAsync((GetServerConfigPayload)message.Payload, cancellationToken);
+            var response = actionHandlerResolver.ResolveAndHandle(payload);
             await ws.SendAsync(
                 new ArraySegment<byte>(Encoding.UTF8.GetBytes(JsonSerializer.Serialize(response))),
                 WebSocketMessageType.Text,
@@ -108,7 +85,7 @@ public class RealtimeControlController(ILogger<RealtimeControlController> logger
         }
         catch (JsonException e)
         {
-            logger.LogWarning($"Cannot deserialize WebSocket message ${e.Message}");
+            logger.LogWarning($"Cannot deserialize WebSocket message: {e.Message}");
         }
     }
 }
