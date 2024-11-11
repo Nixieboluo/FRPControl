@@ -6,7 +6,7 @@ namespace FRPControl.RealtimeControl.Actions;
 public record ActionMessage
 {
     [JsonConverter(typeof(JsonStringEnumConverter))]
-    public ActionType action { get; init; }
+    public ActionType Action { get; init; }
 
-    public JsonElement payload { get; init; }
+    public JsonElement Payload { get; init; }
 }

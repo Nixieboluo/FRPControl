@@ -40,6 +40,9 @@ public class RealtimeControlController(
             while (ws.State == WebSocketState.Open)
             {
                 var result = await ws.ReceiveAsync(new ArraySegment<byte>(buffer), cancellationToken);
+                if (result.MessageType != WebSocketMessageType.Text)
+                    continue;
+
                 data.Write(buffer, 0, result.Count);
 
                 if (result.EndOfMessage)
@@ -47,7 +50,6 @@ public class RealtimeControlController(
                     data.Seek(0, SeekOrigin.Begin);
                     var json = Encoding.UTF8.GetString(data.ToArray());
                     data.SetLength(0);
-
                     await HandleMessageAsync(ws, json, CancellationToken.None);
                 }
             }
@@ -73,8 +75,8 @@ public class RealtimeControlController(
         {
             // Deserialize message
             var payload = ActionMessageDecoder.Decode(messageString);
-            logger.LogDebug("Received message: " + payload);
 
+            // Execute handler and send result
             var response = actionHandlerResolver.ResolveAndHandle(payload);
             await ws.SendAsync(
                 new ArraySegment<byte>(Encoding.UTF8.GetBytes(JsonSerializer.Serialize(response))),

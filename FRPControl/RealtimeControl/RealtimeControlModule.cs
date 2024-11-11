@@ -8,10 +8,7 @@ public class RealtimeControlModule
 {
     public void ConfigureServices(IServiceCollection services)
     {
-        // Action handlers
-        services.AddTransient<IActionHandler<GetServerConfigPayload, ServerConfig>, GetServerConfigHandler>();
-
-        // Handler factory
-        services.AddTransient<ActionHandlerResolver>();
+        // Action handler resolver
+        services.AddSingleton<ActionHandlerResolver>();
     }
 }

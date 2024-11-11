@@ -6,5 +6,8 @@ public record ServerConfig(string Config);
 
 public class GetServerConfigHandler : IActionHandler<GetServerConfigPayload, ServerConfig>
 {
-    public ServerConfig Handle(GetServerConfigPayload payload) => new("(toml frp config)");
+    public ServerConfig Handle(GetServerConfigPayload payload)
+    {
+        return new ServerConfig(File.ReadAllText("config/frps.toml"));
+    }
 }
