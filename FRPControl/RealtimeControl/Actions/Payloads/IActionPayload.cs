@@ -1,3 +1,8 @@
-﻿namespace FRPControl.RealtimeControl.Actions.Payloads;
+﻿using FRPControl.RealtimeControl.Connection;
 
-public interface IActionPayload { }
+namespace FRPControl.RealtimeControl.Actions.Payloads;
+
+public interface IActionPayload
+{
+    public Task Handle(RealtimeControlContext ctx);
+}
